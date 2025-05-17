@@ -12,6 +12,9 @@ import traceback
 import re
 from typing import Dict, Tuple, Optional, List, Any, Union
 
+# Import API key validation
+from api_key_management import validate_api_key
+
 # Redis client for rate limiting
 from redis import Redis
 
@@ -55,9 +58,17 @@ class RateLimiter:
         api_key = req.headers.get('X-API-Key') or req.params.get('api_key')
         
         if api_key:
-            # Use a hashed version of the API key to prevent key leakage in logs
-            hashed_key = hashlib.sha256(api_key.encode()).hexdigest()
-            return f"apikey:{hashed_key}"
+            # Validate the API key against database
+            is_valid, key_data = validate_api_key(api_key)
+            
+            if is_valid:
+                # Use the database ID as the identifier
+                client_id = f"apikey:{key_data['id']}"
+                logger.info(f"Request authenticated with valid API key for {key_data['client_name']}")
+                return client_id
+            else:
+                # If key is invalid, fall back to IP tracking
+                logger.warning(f"Invalid API key used: {api_key[:8]}...")
         
         # Fallback to IP address
         ip = req.headers.get('X-Forwarded-For') or req.headers.get('X-Real-IP') or '0.0.0.0'
